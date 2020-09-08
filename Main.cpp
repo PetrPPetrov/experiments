@@ -1,44 +1,498 @@
 // Copyright 2020 Petr Petrovich Petrov. All rights reserved.
 // License: https://github.com/PetrPPetrov/experiments/blob/master/LICENSE
 
+#include <cassert>
 #include <cstdlib>
 #include <iostream>
+#include <iomanip>
 #include <vector>
+#include <limits>
+#include <Windows.h>
 
-static void dump(const std::vector<int>& data)
+namespace T
 {
-    std::cout << "dump" << std::endl;
-    for (auto element : data)
+    class Reader
     {
-        std::cout << element << std::endl;
+        std::vector<int>& data;
+        size_t index = 0;
+
+    public:
+        Reader(std::vector<int>& data_) : data(data_) {}
+        int serialize(int a)
+        {
+            return data.at(index++);
+        }
+        int peek() const
+        {
+            return data.at(index);
+        }
+    };
+
+    class Writer
+    {
+        std::vector<int>& data;
+
+    public:
+        Writer(std::vector<int>& data_) : data(data_) {}
+        int serialize(int a)
+        {
+            data.push_back(a);
+            return a;
+        }
+    };
+
+    template<class Serializator, class Primitive>
+    inline void serialize_primitive(Primitive& field, Serializator& serializator)
+    {
+        field = serializator.serialize(field);
     }
+
+    struct IFigure
+    {
+        virtual void serialize(Reader& r) = 0;
+        virtual void serialize(Writer& w) = 0;
+        virtual void dump() = 0;
+    };
+
+    struct Triangle : public IFigure
+    {
+        int code = 1;
+        int a = -1;
+        int b = -1;
+        int c = -1;
+
+        Triangle() {}
+        Triangle(int a_, int b_, int c_) : a(a_), b(b_), c(c_) {}
+
+        template<class Serializator>
+        void serialize(Serializator& serializator)
+        {
+            serialize_primitive(code, serializator);
+            serialize_primitive(a, serializator);
+            serialize_primitive(b, serializator);
+            serialize_primitive(c, serializator);
+        }
+
+        virtual void serialize(Reader& r)
+        {
+            serialize<Reader>(r);
+        }
+
+        virtual void serialize(Writer& w)
+        {
+            serialize<Writer>(w);
+        }
+
+        virtual void dump()
+        {
+            std::cout << "    triangle code: " << code << " a: " << a << " b: " << b << " c: " << c << std::endl;
+        }
+    };
+
+    struct Circle : public IFigure
+    {
+        int code = 2;
+        int radius = -1;
+
+        Circle() {}
+        Circle(int radius_) : radius(radius_) {}
+
+        template<class Serializator>
+        void serialize(Serializator& serializator)
+        {
+            serialize_primitive(code, serializator);
+            serialize_primitive(radius, serializator);
+        }
+
+        virtual void serialize(Reader& r)
+        {
+            serialize<Reader>(r);
+        }
+
+        virtual void serialize(Writer& w)
+        {
+            serialize<Writer>(w);
+        }
+
+        virtual void dump()
+        {
+            std::cout << "    circle code: " << code << " radius: " << radius << std::endl;
+        }
+    };
+
+    template<class Serializator, class Struct>
+    inline void serialize_struct(Struct* object, Serializator& serializator)
+    {
+        object->serialize(serializator);
+    }
+
+    template<class Object>
+    inline void serialize_object(Object*& object, Writer& serializator)
+    {
+        if (!object)
+        {
+            int object_type = 0;
+            serialize_primitive(object_type, serializator);
+            return;
+        }
+
+        object->serialize(serializator);
+    }
+
+    template<class Object>
+    inline void serialize_object(Object*& object, Reader& serializator)
+    {
+        int object_type = serializator.peek();
+
+        IFigure* result = nullptr;
+        switch(object_type)
+        {
+        default:
+        case 0:
+            break;
+        case 1:
+            result = new Triangle;
+            break;
+        case 2:
+            result = new Circle;
+            break;
+        }
+
+        if (result)
+        {
+            result->serialize(serializator);
+        }
+        object = result;
+    }
+
+    struct Info
+    {
+        int info0 = -1;
+        int info1 = -1;
+
+        template<class Serializator>
+        void serialize(Serializator& serializator)
+        {
+            serialize_primitive(info0, serializator);
+            serialize_primitive(info1, serializator);
+        }
+    };
+
+    struct Node
+    {
+        int weight = -1;
+        int height = -1;
+        std::vector<IFigure*> figures;
+        std::vector<Info> infos;
+
+        template<class Serializator>
+        void serialize(Serializator& serializator)
+        {
+            serialize_primitive(weight, serializator);
+            serialize_primitive(height, serializator);
+            int figure_count = static_cast<int>(figures.size());
+            serialize_primitive(figure_count, serializator);
+            figures.resize(figure_count, nullptr);
+            for (int i = 0; i < figure_count; ++i)
+            {
+                serialize_object(figures[i], serializator);
+            }
+            int info_count = static_cast<int>(infos.size());
+            serialize_primitive(info_count, serializator);
+            infos.resize(info_count, Info());
+            for (int i = 0; i < info_count; ++i)
+            {
+                serialize_struct(&infos[i], serializator);
+            }
+        }
+
+        virtual void dump()
+        {
+            std::cout << "node weight: " << weight << " height: " << height << " figure_count: " << figures.size() << std::endl;
+            for (size_t i = 0; i < figures.size(); ++i)
+            {
+                IFigure* figure = figures[i];
+                if (figure)
+                {
+                    figure->dump();
+                }
+            }
+        }
+    };
 }
 
-class A
+namespace V
 {
-    std::vector<int> a;
-
-public:
-    A(std::vector<int>&& a_) : a(std::move(a_))
+    class ISerializer
     {
+    public:
+        virtual int serialize(int a) = 0;
+        virtual int peek() const = 0;
+        virtual bool isReader() const = 0;
+    };
+
+    struct ISerializable
+    {
+        virtual void serialize(ISerializer& serializer) = 0;
+    };
+
+    class Reader : public ISerializer
+    {
+        std::vector<int>& data;
+        size_t index = 0;
+
+    public:
+        Reader(std::vector<int>& data_) : data(data_) {}
+        virtual int serialize(int a)
+        {
+            return data.at(index++);
+        }
+        virtual int peek() const
+        {
+            return data.at(index);
+        }
+        virtual bool isReader() const
+        {
+            return true;
+        }
+    };
+
+    class Writer : public ISerializer
+    {
+        std::vector<int>& data;
+
+    public:
+        Writer(std::vector<int>& data_) : data(data_) {}
+        virtual int serialize(int a)
+        {
+            data.push_back(a);
+            return a;
+        }
+        virtual int peek() const
+        {
+            assert(false);
+            return 0;
+        }
+        virtual bool isReader() const
+        {
+            return false;
+        }
+    };
+
+    template<class Serializator, class Primitive>
+    inline void serialize_primitive(Primitive& field, Serializator& serializator)
+    {
+        field = serializator.serialize(field);
     }
 
-    void dump() const
+    struct IFigure : public ISerializable
     {
-        ::dump(a);
+        virtual void dump() = 0;
+    };
+
+    struct Triangle : public IFigure
+    {
+        int code = 1;
+        int a = -1;
+        int b = -1;
+        int c = -1;
+
+        Triangle() {}
+        Triangle(int a_, int b_, int c_) : a(a_), b(b_), c(c_) {}
+
+        virtual void serialize(ISerializer& serializator)
+        {
+            serialize_primitive(code, serializator);
+            serialize_primitive(a, serializator);
+            serialize_primitive(b, serializator);
+            serialize_primitive(c, serializator);
+        }
+
+        virtual void dump()
+        {
+            std::cout << "    triangle code: " << code << " a: " << a << " b: " << b << " c: " << c << std::endl;
+        }
+    };
+
+    struct Circle : public IFigure
+    {
+        int code = 2;
+        int radius = -1;
+
+        Circle() {}
+        Circle(int radius_) : radius(radius_) {}
+
+        void serialize(ISerializer& serializator)
+        {
+            serialize_primitive(code, serializator);
+            serialize_primitive(radius, serializator);
+        }
+
+        virtual void dump()
+        {
+            std::cout << "    circle code: " << code << " radius: " << radius << std::endl;
+        }
+    };
+
+    template<class Struct>
+    inline void serialize_struct(Struct* object, ISerializer& serializator)
+    {
+        object->serialize(serializator);
     }
-};
+
+    inline void serialize_object(ISerializable*& object, ISerializer& serializator)
+    {
+        if (serializator.isReader())
+        {
+            int object_type = serializator.peek();
+
+            IFigure* result = nullptr;
+            switch (object_type)
+            {
+            default:
+            case 0:
+                break;
+            case 1:
+                result = new Triangle;
+                break;
+            case 2:
+                result = new Circle;
+                break;
+            }
+
+            if (result)
+            {
+                result->serialize(serializator);
+            }
+            object = result;
+        }
+        else
+        {
+            if (!object)
+            {
+                int object_type = 0;
+                serialize_primitive(object_type, serializator);
+                return;
+            }
+
+            object->serialize(serializator);
+        }
+    }
+
+    struct Info
+    {
+        int info0 = -1;
+        int info1 = -1;
+
+        void serialize(ISerializer& serializator)
+        {
+            serialize_primitive(info0, serializator);
+            serialize_primitive(info1, serializator);
+        }
+    };
+
+    struct Node : public ISerializable
+    {
+        int weight = -1;
+        int height = -1;
+        std::vector<IFigure*> figures;
+        std::vector<Info> infos;
+
+        virtual void serialize(ISerializer& serializator)
+        {
+            serialize_primitive(weight, serializator);
+            serialize_primitive(height, serializator);
+            int figure_count = static_cast<int>(figures.size());
+            serialize_primitive(figure_count, serializator);
+            figures.resize(figure_count, nullptr);
+            for (int i = 0; i < figure_count; ++i)
+            {
+                ISerializable* serializable = figures[i];
+                serialize_object(serializable, serializator);
+                figures[i] = reinterpret_cast<IFigure*>(serializable);
+            }
+            int info_count = static_cast<int>(infos.size());
+            serialize_primitive(info_count, serializator);
+            infos.resize(info_count, Info());
+            for (int i = 0; i < info_count; ++i)
+            {
+                serialize_struct(&infos[i], serializator);
+            }
+        }
+
+        virtual void dump()
+        {
+            std::cout << "node weight: " << weight << " height: " << height << " figure_count: " << figures.size() << std::endl;
+            for (size_t i = 0; i < figures.size(); ++i)
+            {
+                IFigure* figure = figures[i];
+                if (figure)
+                {
+                    figure->dump();
+                }
+            }
+        }
+    };
+}
+
+void dump(std::vector<int>& data)
+{
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        std::cout << std::fixed << std::setw(5) << data[i] << " ";
+    }
+    std::cout << std::endl;
+}
 
 int main()
 {
-    std::vector<int> c;
-    c.push_back(5);
-    c.push_back(7);
-    c.push_back(9);
-    dump(c);
+    using namespace V;
 
-    A a(std::move(c));
-    dump(c);
-    a.dump();
+    const static size_t COUNT = 1024 * 1204 * 32;
+
+    std::vector<int> data;
+    data.reserve(COUNT * 8);
+    Writer w(data);
+
+    Node a;
+    a.weight = 1024;
+    a.height = 768;
+    a.figures.reserve(COUNT + 10);
+    a.figures.push_back(new Triangle(1, 2, 3));
+    a.figures.push_back(new Circle(13));
+    a.figures.push_back(new Triangle(6, 7, 8));
+    for (size_t i = 0; i < COUNT; ++i)
+    {
+        a.figures.push_back(new Circle(static_cast<int>(i)));
+    }
+    a.infos.reserve(COUNT + 10);
+    for (size_t i = 0; i < COUNT; ++i)
+    {
+        a.infos.push_back(Info());
+    }
+    std::cout << "created" << std::endl;
+    //a.dump();
+    DWORD t0 = GetTickCount();
+    a.serialize(w);
+    DWORD t1 = GetTickCount();
+
+    //dump(data);
+
+    Reader r(data);
+    Node b;
+
+    DWORD t2 = GetTickCount();
+    b.serialize(r);
+    DWORD t3 = GetTickCount();
+
+    //b.dump();
+
+    std::cout << "t0 = " << t0 << std::endl;
+    std::cout << "t1 = " << t1 << std::endl;
+    std::cout << "t2 = " << t2 << std::endl;
+    std::cout << "t3 = " << t3 << std::endl;
+    std::cout << "t1 - t0 = " << t1 - t0 << std::endl;
+    std::cout << "t3 - t2 = " << t3 - t2 << std::endl;
+
     return EXIT_SUCCESS;
 }
