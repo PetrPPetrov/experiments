@@ -5,9 +5,208 @@
 #include <cstdlib>
 #include <iostream>
 #include <iomanip>
+#include <memory>
 #include <vector>
 #include <limits>
 #include <Windows.h>
+
+namespace T0
+{
+    class Reader
+    {
+        std::vector<int>& data;
+        size_t index = 0;
+
+    public:
+        Reader(std::vector<int>& data_) : data(data_) {}
+
+        constexpr static bool isReader = true;
+        void serialize(int& a)
+        {
+            a = data.at(index++);
+        }
+    };
+
+    class Writer
+    {
+        std::vector<int>& data;
+
+    public:
+        Writer(std::vector<int>& data_) : data(data_) {}
+
+        constexpr static bool isReader = false;
+        void serialize(int a)
+        {
+            data.push_back(a);
+        }
+    };
+
+    template<class Serializator>
+    void serialize(Serializator& serializator, int& data)
+    {
+        serializator.serialize(data);
+    }
+
+    struct IFigure
+    {
+        virtual void dump() = 0;
+        int code = -1;
+    };
+
+    struct Triangle : public IFigure
+    {
+        int a = -1;
+        int b = -1;
+        int c = -1;
+
+        Triangle() { code = 1; }
+        Triangle(int a_, int b_, int c_) : a(a_), b(b_), c(c_) { code = 1; }
+
+        virtual void dump()
+        {
+            std::cout << "    triangle code: " << code << " a: " << a << " b: " << b << " c: " << c << std::endl;
+        }
+    };
+
+    template<class Serializator>
+    void serialize_triangle(Serializator& serializator, IFigure*& figure)
+    {
+        if constexpr (Serializator::isReader)
+            figure = new Triangle();
+
+        Triangle* triangle = static_cast<Triangle*>(figure);
+        serialize(serializator, triangle->a);
+        serialize(serializator, triangle->b);
+        serialize(serializator, triangle->c);
+    }
+
+    struct Circle : public IFigure
+    {
+        int radius = -1;
+
+        Circle() { code = 2;  }
+        Circle(int radius_) : radius(radius_) { code = 2; }
+
+        virtual void dump()
+        {
+            std::cout << "    circle code: " << code << " radius: " << radius << std::endl;
+        }
+    };
+
+    template<class Serializator>
+    void serialize_circle(Serializator& serializator, IFigure*& figure)
+    {
+        if constexpr (Serializator::isReader)
+            figure = new Circle();
+
+        Circle* circle = static_cast<Circle*>(figure);
+        serialize(serializator, circle->radius);
+    }
+
+    template<class Serializator>
+    void serialize(Serializator& serializator, IFigure*& figure)
+    {
+        int object_type = figure ? figure->code : 0;
+        serialize(serializator, object_type);
+        switch (object_type)
+        {
+        default:
+        case 0:
+            if constexpr (!Serializator::isReader)
+            {
+                figure = nullptr;
+            }
+            break;
+        case 1:
+            serialize_triangle(serializator, figure);
+            break;
+        case 2:
+            serialize_circle(serializator, figure);
+            break;
+        }
+    }
+
+    struct Info
+    {
+        int info0 = -1;
+        int info1 = -1;
+    };
+
+    template<class Serializator>
+    void serialize(Serializator& serializator, Info& info)
+    {
+        serialize(serializator, info.info0);
+        serialize(serializator, info.info1);
+    }
+
+    struct Node
+    {
+        int weight = -1;
+        int height = -1;
+        std::vector<IFigure*> figures;
+        std::vector<Info> infos;
+
+        virtual void dump()
+        {
+            std::cout << "node weight: " << weight << " height: " << height << " figure_count: " << figures.size() << std::endl;
+            for (size_t i = 0; i < figures.size(); ++i)
+            {
+                IFigure* figure = figures[i];
+                if (figure)
+                {
+                    figure->dump();
+                }
+            }
+        }
+    };
+
+    template<class Serializator>
+    void serialize(Serializator& serializator, Node& node)
+    {
+        serialize(serializator, node.weight);
+        serialize(serializator, node.height);
+
+        if constexpr (Serializator::isReader)
+        {
+            int figure_count = 0;
+            serialize(serializator, figure_count);
+            node.figures.resize(figure_count, nullptr);
+            for (int i = 0; i < figure_count; ++i)
+            {
+                serialize(serializator, node.figures[i]);
+            }
+        }
+        else
+        {
+            int figure_count = static_cast<int>(node.figures.size());
+            serialize(serializator, figure_count);
+            for (auto& figure : node.figures)
+            {
+                serialize(serializator, figure);
+            }
+        }
+
+        if constexpr (Serializator::isReader)
+        {
+            int info_count = 0;
+            serialize(serializator, info_count);
+            node.infos.resize(info_count);
+            for (int i = 0; i < info_count; ++i)
+            {
+                serialize(serializator, node.infos[i]);
+            }
+        }
+        else
+        {
+            int info_count = static_cast<int>(node.infos.size());
+            serialize(serializator, info_count);
+            for (auto& info : node.infos)
+            {
+                serialize(serializator, info);
+            }
+        }
+    }
+}
 
 namespace T
 {
@@ -434,6 +633,7 @@ namespace V
     };
 }
 
+
 void dump(std::vector<int>& data)
 {
     for (size_t i = 0; i < data.size(); ++i)
@@ -445,7 +645,7 @@ void dump(std::vector<int>& data)
 
 int main()
 {
-    using namespace V;
+    using namespace T0;
 
     const static size_t COUNT = 1024 * 1204 * 32;
 
@@ -472,7 +672,8 @@ int main()
     std::cout << "created" << std::endl;
     //a.dump();
     DWORD t0 = GetTickCount();
-    a.serialize(w);
+    serialize(w, a);
+    //a.serialize(w);
     DWORD t1 = GetTickCount();
 
     //dump(data);
@@ -481,7 +682,8 @@ int main()
     Node b;
 
     DWORD t2 = GetTickCount();
-    b.serialize(r);
+    serialize(r, b);
+    //b.serialize(r);
     DWORD t3 = GetTickCount();
 
     //b.dump();
