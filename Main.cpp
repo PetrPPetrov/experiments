@@ -334,8 +334,7 @@ namespace V
         }
     };
 
-    template<class Struct>
-    inline void serialize_struct(Struct* object, ISerializer& serializator)
+    inline void serialize_struct(ISerializable* object, ISerializer& serializator)
     {
         object->serialize(serializator);
     }
@@ -379,12 +378,12 @@ namespace V
         }
     }
 
-    struct Info
+    struct Info : public ISerializable
     {
         int info0 = -1;
         int info1 = -1;
 
-        void serialize(ISerializer& serializator)
+        virtual void serialize(ISerializer& serializator)
         {
             serialize_primitive(info0, serializator);
             serialize_primitive(info1, serializator);
