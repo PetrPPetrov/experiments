@@ -11,101 +11,55 @@
 #include <iostream>
 #include <typeinfo>
 
-template<typename ...> struct type_list {};
-
-template<typename T>
-constexpr bool find_impl(const T*, const type_list<T>&)
+template<unsigned N>
+constexpr const char* to_str()
 {
-    return true;
+    return "" N "";
 }
 
-template<typename E, typename T>
-constexpr bool find_impl(const E*, const type_list<T>&)
+template<unsigned R, unsigned C>
+const char* description();
+
+template<>
+const char* description<1, 2>()
 {
-    return false;
+    return "matrix<1, 2>";
 }
 
-template<typename T, typename ...RestTypes>
-constexpr bool find_impl(const T*, const type_list<T, RestTypes...>&)
+template<>
+const char* description<1, 3>()
 {
-    return true;
+    return "matrix<1, 3>";
 }
 
-template<typename E, typename T, typename ...RestTypes>
-constexpr bool find_impl(const E* element, const type_list<T, RestTypes...>&)
+template<>
+const char* description<3, 3>()
 {
-    return find_impl<E>(element, type_list<RestTypes...>());
+    return "matrix<3, 3>";
 }
 
-template<class E, class List>
-constexpr bool find()
+template<>
+const char* description<4, 4>()
 {
-    return find_impl<E>(nullptr, List());
+    return "matrix<3, 3>";
 }
 
-template<typename T>
-void show_list_impl(const type_list<T>&)
+template<unsigned R, unsigned C>
+struct matrix
 {
-    std::cout << typeid(T).name() << std::endl;
-}
-
-template<typename T, typename ...RestTypes>
-void show_list_impl(const type_list<T, RestTypes...>&)
-{
-    std::cout << typeid(T).name() << std::endl;
-    show_list_impl(type_list<RestTypes...>());
-}
-
-template<class List>
-void show_list()
-{
-    return show_list_impl(List());
-}
-
-typedef type_list <
-    int,
-    double,
-    char
-> type_list_t;
-
-struct Y
-{
+    double data[R][C];
 };
 
-struct X
+template<unsigned R, unsigned C>
+void dump(matrix<R, C>& value)
 {
-    virtual ~X() {}
-};
-
-struct I
-{
-    virtual ~I() {}
-};
-
-struct Z : public I
-{
-};
-
-template<typename T>
-void check()
-{
-    if constexpr (find<T, type_list_t>())
-    {
-        std::cout << typeid(T).name() << " is in list" << std::endl;
-    }
-    else
-    {
-        std::cout << typeid(T).name() << " is not in list" << std::endl;
-    }
+    std::cout << description<R, C>() << std::endl;
 }
 
 int main()
 {
-    std::cout << "type list:" << std::endl;
-    show_list<type_list_t>();
-    std::cout << std::endl;
-
-    check<Z>();
+    matrix<3, 3> a;
+    dump(a);
 
     return EXIT_SUCCESS;
 }
