@@ -11,35 +11,29 @@
 #include <iostream>
 #include <typeinfo>
 
-template<unsigned N>
-constexpr const char* to_str()
-{
-    return "" N "";
-}
-
 template<unsigned R, unsigned C>
-const char* description();
+constexpr const char* description();
 
 template<>
-const char* description<1, 2>()
+constexpr const char* description<1, 2>()
 {
     return "matrix<1, 2>";
 }
 
 template<>
-const char* description<1, 3>()
+constexpr const char* description<1, 3>()
 {
     return "matrix<1, 3>";
 }
 
 template<>
-const char* description<3, 3>()
+constexpr const char* description<3, 3>()
 {
     return "matrix<3, 3>";
 }
 
 template<>
-const char* description<4, 4>()
+constexpr const char* description<4, 4>()
 {
     return "matrix<3, 3>";
 }
